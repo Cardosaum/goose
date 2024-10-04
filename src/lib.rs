@@ -1777,7 +1777,7 @@ impl GooseAttack {
                     self.update_duration();
                     self.increase_attack(&mut goose_attack_run_state).await?;
                 }
-                // In the Maintain phase, Goose continues runnning all launched GooseUser threads.
+                // In the Maintain phase, Goose continues running all launched GooseUser threads.
                 AttackPhase::Maintain => {
                     self.update_duration();
                     self.maintain_attack(&mut goose_attack_run_state).await?;
