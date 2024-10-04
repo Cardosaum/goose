@@ -650,7 +650,6 @@ pub fn goose_method_from_method(method: Method) -> Result<GooseMethod, Box<Trans
         Method::POST => GooseMethod::Post,
         Method::PUT => GooseMethod::Put,
         _ => {
-            // return Err(Box::new(TransactionError::InvalidMethod { method }));
             return Err(Box::new(method.into()));
         }
     })
