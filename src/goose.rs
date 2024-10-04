@@ -1589,7 +1589,7 @@ impl GooseUser {
         let response = self.client.execute(built_request).await;
         request_metric.set_response_time(started.elapsed().as_millis());
 
-        // Determine if the request suceeded or failed.
+        // Determine if the request succeeded or failed.
         match &response {
             Ok(r) => {
                 let status_code = r.status();
