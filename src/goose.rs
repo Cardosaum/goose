@@ -335,141 +335,72 @@ macro_rules! scenario {
 pub type TransactionResult = Result<(), Box<TransactionError>>;
 
 /// An enumeration of all errors a [`Transaction`](./struct.Transaction.html) can return.
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum TransactionError {
     /// Wraps a [`reqwest::Error`](https://docs.rs/reqwest/*/reqwest/struct.Error.html).
-    Reqwest(reqwest::Error),
+    #[error("reqwest::Error: {0}")]
+    Reqwest(#[from] reqwest::Error),
     /// Wraps a [`url::ParseError`](https://docs.rs/url/*/url/enum.ParseError.html).
-    Url(url::ParseError),
+    #[error("url::ParseError: {0}")]
+    Url(#[from] url::ParseError),
     /// The request failed.
-    RequestFailed {
-        /// The [`GooseRequestMetric`](./struct.GooseRequestMetric.html) that failed.
-        raw_request: GooseRequestMetric,
-    },
+    #[error("request failed: {0:?}")]
+    RequestFailed(GooseRequestMetric),
     /// The request was canceled. This happens when the throttle is enabled and the load
     /// test finishes.
-    RequestCanceled {
-        /// Wraps a [`flume::SendError`](https://docs.rs/flume/*/flume/struct.SendError.html),
-        /// a [`GooseRequestMetric`](./struct.GooseRequestMetric.html) has not yet been constructed.
-        source: flume::SendError<bool>,
-    },
+    ///
+    /// Wraps a [`flume::SendError`](https://docs.rs/flume/*/flume/struct.SendError.html),
+    /// a [`GooseRequestMetric`](./struct.GooseRequestMetric.html) has not yet been constructed.
+    #[error("request canceled: {0}")]
+    RequestCanceled(#[from] flume::SendError<bool>),
     /// There was an error sending the metrics for a request to the parent thread.
-    MetricsFailed {
-        /// Wraps a [`flume::SendError`](https://docs.rs/flume/*/flume/struct.SendError.html),
-        /// which contains the [`GooseMetric`](../metrics/enum.GooseMetric.html) that wasn't sent.
-        source: flume::SendError<GooseMetric>,
-    },
+    ///
+    /// Wraps a [`flume::SendError`](https://docs.rs/flume/*/flume/struct.SendError.html),
+    /// which contains the [`GooseMetric`](../metrics/enum.GooseMetric.html) that wasn't sent.
+    #[error("metrics failed: {0}")]
+    MetricsFailed(#[from] flume::SendError<GooseMetric>),
     /// There was an error sending debug information to the logger thread.
-    LoggerFailed {
-        /// Wraps a [`flume::SendError`](https://docs.rs/flume/*/flume/struct.SendError.html),
-        /// which contains the [`GooseDebug`](./struct.GooseDebug.html) that wasn't sent.
-        source: flume::SendError<Option<GooseLog>>,
-    },
+    ///
+    /// Wraps a [`flume::SendError`](https://docs.rs/flume/*/flume/struct.SendError.html),
+    /// which contains the [`GooseDebug`](./struct.GooseDebug.html) that wasn't sent.
+    #[error("logger failed: {0}")]
+    LoggerFailed(#[from] flume::SendError<Option<GooseLog>>),
     /// Attempted an unrecognized HTTP request method.
-    InvalidMethod {
-        /// The unrecognized HTTP request method.
-        method: Method,
-    },
+    #[error("invalid method: {0}")]
+    InvalidMethod(Method),
+    /// Anyhow error.
+    #[error("anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error),
+    /// Custom error.
+    #[error("custom error: {0}")]
+    Custom(String),
 }
-/// Implement a helper to provide a text description of all possible types of errors.
-impl TransactionError {
-    fn describe(&self) -> &str {
-        match *self {
-            TransactionError::Reqwest(_) => "reqwest::Error",
-            TransactionError::Url(_) => "url::ParseError",
-            TransactionError::RequestFailed { .. } => "request failed",
-            TransactionError::RequestCanceled { .. } => {
-                "request canceled because throttled load test ended"
-            }
-            TransactionError::MetricsFailed { .. } => "failed to send metrics to parent thread",
-            TransactionError::LoggerFailed { .. } => "failed to send log message to logger thread",
-            TransactionError::InvalidMethod { .. } => "unrecognized HTTP request method",
-        }
+
+/// Auto-convert request metrics to TransactionError.
+impl From<GooseRequestMetric> for TransactionError {
+    fn from(metric: GooseRequestMetric) -> Self {
+        TransactionError::RequestFailed(metric)
     }
 }
 
-/// Implement format trait to allow displaying errors.
-impl fmt::Display for TransactionError {
-    // Implement display of error with `{}` marker.
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            TransactionError::Reqwest(ref source) => {
-                write!(f, "TransactionError: {} ({})", self.describe(), source)
-            }
-            TransactionError::Url(ref source) => {
-                write!(f, "TransactionError: {} ({})", self.describe(), source)
-            }
-            TransactionError::RequestCanceled { ref source } => {
-                write!(f, "TransactionError: {} ({})", self.describe(), source)
-            }
-            TransactionError::MetricsFailed { ref source } => {
-                write!(f, "TransactionError: {} ({})", self.describe(), source)
-            }
-            TransactionError::LoggerFailed { ref source } => {
-                write!(f, "TransactionError: {} ({})", self.describe(), source)
-            }
-            _ => write!(f, "TransactionError: {}", self.describe()),
-        }
-    }
-}
-
-// Define the lower level source of this error, if any.
-impl std::error::Error for TransactionError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match *self {
-            TransactionError::Reqwest(ref source) => Some(source),
-            TransactionError::Url(ref source) => Some(source),
-            TransactionError::RequestCanceled { ref source } => Some(source),
-            TransactionError::MetricsFailed { ref source } => Some(source),
-            TransactionError::LoggerFailed { ref source } => Some(source),
-            _ => None,
-        }
-    }
-}
-
-/// Auto-convert Reqwest errors.
-impl From<reqwest::Error> for TransactionError {
-    fn from(err: reqwest::Error) -> TransactionError {
-        TransactionError::Reqwest(err)
+/// Auto-convert invalid methods to boxed TransactionError.
+impl From<Method> for TransactionError {
+    fn from(method: Method) -> Self {
+        TransactionError::InvalidMethod(method)
     }
 }
 
 /// Auto-convert Reqwest errors to boxed TransactionError.
 impl From<reqwest::Error> for Box<TransactionError> {
     fn from(value: reqwest::Error) -> Self {
-        Box::new(TransactionError::Reqwest(value))
+        Box::new(value.into())
     }
 }
 
-/// Auto-convert Url errors.
-impl From<url::ParseError> for TransactionError {
-    fn from(err: url::ParseError) -> TransactionError {
-        TransactionError::Url(err)
-    }
-}
-
-/// When the throttle is enabled and the load test ends, the throttle channel is
-/// shut down. This causes a
-/// [`flume::SendError`](https://docs.rs/flume/*/flume/struct.SendError.html),
-/// which gets automatically converted to `RequestCanceled`.
-/// [`RequestCanceled`](./enum.TransactionError.html#variant.RequestCanceled)
-impl From<flume::SendError<bool>> for TransactionError {
-    fn from(source: flume::SendError<bool>) -> TransactionError {
-        TransactionError::RequestCanceled { source }
-    }
-}
-
-/// Attempt to send metrics to the parent thread failed.
-impl From<flume::SendError<GooseMetric>> for TransactionError {
-    fn from(source: flume::SendError<GooseMetric>) -> TransactionError {
-        TransactionError::MetricsFailed { source }
-    }
-}
-
-/// Attempt to send logs to the logger thread failed.
-impl From<flume::SendError<Option<GooseLog>>> for TransactionError {
-    fn from(source: flume::SendError<Option<GooseLog>>) -> TransactionError {
-        TransactionError::LoggerFailed { source }
+/// Auto-convert custom errors to boxed TransactionError.
+impl From<String> for TransactionError {
+    fn from(value: String) -> Self {
+        TransactionError::Custom(value)
     }
 }
 
@@ -705,7 +636,8 @@ pub fn goose_method_from_method(method: Method) -> Result<GooseMethod, Box<Trans
         Method::POST => GooseMethod::Post,
         Method::PUT => GooseMethod::Put,
         _ => {
-            return Err(Box::new(TransactionError::InvalidMethod { method }));
+            // return Err(Box::new(TransactionError::InvalidMethod { method }));
+            return Err(Box::new(method.into()));
         }
     })
 }
@@ -1713,9 +1645,7 @@ impl GooseUser {
 
         if request.error_on_fail && !request_metric.success {
             error!("{:?} {}", &path, &request_metric.error);
-            return Err(Box::new(TransactionError::RequestFailed {
-                raw_request: request_metric,
-            }));
+            return Err(Box::new(request_metric.into()));
         }
 
         Ok(GooseResponse::new(request_metric, response))
@@ -2024,9 +1954,7 @@ impl GooseUser {
         // Print log to stdout.
         info!("set_failure: {}", tag);
 
-        Err(Box::new(TransactionError::RequestFailed {
-            raw_request: request.clone(),
-        }))
+        Err(Box::new(TransactionError::RequestFailed(request.clone())))
     }
 
     /// Write to [`debug_file`](../struct.GooseConfiguration.html#structfield.debug_file)
