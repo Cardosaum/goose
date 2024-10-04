@@ -404,6 +404,20 @@ impl From<String> for TransactionError {
     }
 }
 
+/// Auto-convert String to boxed TransactionError.
+impl From<String> for Box<TransactionError> {
+    fn from(value: String) -> Self {
+        Box::new(value.into())
+    }
+}
+
+/// Auto-convert anyhow errors to boxed TransactionError.
+impl From<anyhow::Error> for Box<TransactionError> {
+    fn from(value: anyhow::Error) -> Self {
+        Box::new(value.into())
+    }
+}
+
 /// An individual scenario.
 #[derive(Clone, Hash)]
 pub struct Scenario {
